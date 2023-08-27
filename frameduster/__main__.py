@@ -5,13 +5,13 @@ from datetime import datetime
 from loguru import logger
 
 # wrap user code in _user_functions
-from lib import user_functions, pbar_config
-from lib.iterable import _flush
-from lib.toppings import _add_decorators, _setup_pbar, _setup_mixed_context
-from lib.mongodb import _reset_function, _state_function
-from lib.s3 import _delete_field
-from lib.local import _update_local, _set_local, _unbind_local, _scan_local
-from lib.config import config
+from frameduster import user_functions, pbar_config
+from frameduster.iterable import _flush
+from frameduster.toppings import _add_decorators, _setup_pbar, _setup_mixed_context
+from frameduster.mongodb import _reset_function, _state_function
+from frameduster.s3 import _delete_field
+from frameduster.local import _update_local, _set_local, _unbind_local, _scan_local
+from frameduster.config import config
 
 def create_parser():
     parser = argparse.ArgumentParser(prog=config['project_name'])

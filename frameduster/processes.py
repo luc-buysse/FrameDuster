@@ -4,12 +4,12 @@ import threading
 from multiprocessing import connection
 import json
 
-from lib.iterable import (_generator, _flush, )
-from lib.outputs import _Output
-from lib.inputs import _Input
-from lib.config import config, _local
-from lib.threads import _Threads
-from lib.clerk import _Clerk
+from frameduster.iterable import (_generator, _flush, )
+from frameduster.outputs import _Output
+from frameduster.inputs import _Input
+from frameduster.config import config, _local
+from frameduster.threads import _Threads
+from frameduster.clerk import _Clerk
 
 _decode_decorator = {
     "Output": _Output,

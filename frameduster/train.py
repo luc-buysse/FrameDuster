@@ -18,7 +18,7 @@ from sklearn.metrics import ConfusionMatrixDisplay
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 
-from lib.config import config
+from frameduster.config import config
 
 
 # **** metrics ****

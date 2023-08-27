@@ -1,7 +1,4 @@
 import inspect
-import queue
-import threading
-import time
 
 
 def _correct_user(func):

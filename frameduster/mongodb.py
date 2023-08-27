@@ -8,7 +8,7 @@ from pymongo import uri_parser, UpdateOne
 from tqdm import tqdm
 import math
 
-from lib.config import config
+from frameduster.config import config
 
 
 def _get_mongo_connection():

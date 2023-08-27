@@ -1,19 +1,12 @@
-import multiprocessing
-import queue
 import threading
-from concurrent.futures import ThreadPoolExecutor
 
-from lib.iterable import _generator
-from lib.mongodb import _write_document
-from lib.s3 import _write_image, _recover_s3_cache
-from lib.s3_stream import _write_image_stream
-from lib.local import _write_local
-from lib.config import config
-from lib.config import _random_name
-
-from loguru import logger
-import json
-import hashlib
+from frameduster.iterable import _generator
+from frameduster.mongodb import _write_document
+from frameduster.s3 import _write_image, _recover_s3_cache
+from frameduster.s3_stream import _write_image_stream
+from frameduster.local import _write_local
+from frameduster.config import config
+from frameduster.config import _random_name
 
 def _fix_item(item, file_name):
     if file_name not in item:

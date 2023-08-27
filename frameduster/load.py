@@ -1,13 +1,11 @@
-import decimal
 import multiprocessing
 import os
 import copy
-import types
 
-from lib.iterable import _generator
-from lib.mongodb import mongo_connection
-from lib.config import config
-from lib.s3 import _iterate_batch_s3, _get_image
+from frameduster.iterable import _generator
+from frameduster.mongodb import mongo_connection
+from frameduster.config import config
+from frameduster.s3 import _iterate_batch_s3, _get_image
 
 from torch.utils.data import IterableDataset, DataLoader, Dataset, random_split
 import torchvision.transforms

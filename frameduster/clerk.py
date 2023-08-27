@@ -1,8 +1,8 @@
 import threading
 
-from lib.mongodb import _mark_done
-from lib.iterable import _generator
-from lib.config import config
+from frameduster.mongodb import _mark_done
+from frameduster.iterable import _generator
+from frameduster.config import config
 
 
 def _Clerk(function_id):

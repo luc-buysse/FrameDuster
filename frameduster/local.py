@@ -1,4 +1,3 @@
-import logging
 import os
 import threading
 
@@ -6,9 +5,9 @@ from PIL import Image
 from loguru import logger
 from tqdm import tqdm
 
-from lib.config import config
-from lib.mongodb import _write_document, mongo_connection, _ensure_index
-from lib.config import _random_name
+from frameduster.config import config
+from frameduster.mongodb import _write_document, mongo_connection, _ensure_index
+from frameduster.config import _random_name
 
 _local_count = {}
 _local_collection = mongo_connection[f'{config["project_name"]}-pipeline-local']

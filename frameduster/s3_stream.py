@@ -12,9 +12,9 @@ from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor
 import pymongo.errors
 
-from lib.config import config
-from lib.s3 import _s3_client, _mongo_cache, _stream_cache, _stream_complete_cache
-from lib.mongodb import mongo_connection, _write_document
+from frameduster.config import config
+from frameduster.s3 import _s3_client, _mongo_cache, _stream_cache, _stream_complete_cache
+from frameduster.mongodb import mongo_connection, _write_document
 
 
 class ConnectedTarBuffer:

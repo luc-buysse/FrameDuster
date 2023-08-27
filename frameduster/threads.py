@@ -1,8 +1,8 @@
-from lib.config import _local
-
 import threading
 from queue import Queue
-from lib.iterable import _generator
+
+from frameduster.config import _local
+from frameduster.iterable import _generator
 
 
 def _thread_function(start_events, outputs, i, generator, slice_desc):

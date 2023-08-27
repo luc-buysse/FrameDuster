@@ -4,8 +4,8 @@ import io
 import struct
 from tarfile import BLOCKSIZE
 
-from lib.config import config
-from lib.s3 import _s3_client
+from frameduster.config import config
+from frameduster.s3 import _s3_client
 
 def _process_tar_batch(object_list, target, to_do, event, last=False):
     ts = S3TarStream(target)

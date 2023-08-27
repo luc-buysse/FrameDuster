@@ -7,7 +7,6 @@ import tarfile
 import glob
 import hashlib
 import threading
-
 import urllib3
 from loguru import logger
 from concurrent.futures import ThreadPoolExecutor
@@ -17,9 +16,9 @@ from pymongo.collection import ReturnDocument
 from PIL import Image, UnidentifiedImageError
 import shutil
 
-from lib.config import config
-from lib.mongodb import _write_document, mongo_connection
-from lib.config import _random_name
+from frameduster.config import config
+from frameduster.mongodb import _write_document, mongo_connection
+from frameduster.config import _random_name
 
 _cache_size = 0
 _main_cache = os.path.join(config['app_path'], 'data/_cache')

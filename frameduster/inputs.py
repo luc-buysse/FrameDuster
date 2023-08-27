@@ -1,13 +1,13 @@
 from loguru import logger
 
-from lib.iterable import _generator
-from lib.mongodb import mongo_connection, _ensure_index, get_sub_cursor
-from lib.s3 import _iterate_s3, _get_image
-from lib.local import _iterate_local, _get_image_local
-from lib.config import config, _local
-
 import threading
 import queue
+
+from frameduster.iterable import _generator
+from frameduster.mongodb import mongo_connection, _ensure_index, get_sub_cursor
+from frameduster.s3 import _iterate_s3, _get_image
+from frameduster.local import _iterate_local, _get_image_local
+from frameduster.config import config, _local
 
 
 class _mail_box:

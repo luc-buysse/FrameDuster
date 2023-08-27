@@ -1,19 +1,18 @@
 import inspect
 import json
 import multiprocessing
-import queue
 import threading
 
-from lib.processes import _Processes
-from lib.threads import _Threads
-from lib.outputs import _Output
-from lib.inputs import _Input
-from lib.load import _Load
-from lib.train import _Train
-from lib.clerk import _Clerk
+from frameduster.processes import _Processes
+from frameduster.threads import _Threads
+from frameduster.outputs import _Output
+from frameduster.inputs import _Input
+from frameduster.load import _Load
+from frameduster.train import _Train
+from frameduster.clerk import _Clerk
 
-from lib.mongodb import _index_manager, _global_pbar_thread, _local_pbar_thread
-from lib.config import config
+from frameduster.mongodb import _index_manager, _global_pbar_thread, _local_pbar_thread
+from frameduster.config import config
 
 def _topping_transformer(name, args, kwargs):
     def transformer(input):

@@ -1,13 +1,10 @@
 import re
-
-from lib.config import config
-from lib.mongodb import mongo_connection
-
 from concurrent.futures import ThreadPoolExecutor
 import json
-from PIL import Image
-import itertools
 from tqdm import tqdm
+
+from frameduster.config import config
+from frameduster.mongodb import mongo_connection
 
 # Associates function_id with a service planning
 user_functions = {}
