@@ -1,8 +1,8 @@
+from config import _local
+from iterable import _generator
+
 import threading
 from queue import Queue
-
-from frameduster.config import _local
-from frameduster.iterable import _generator
 
 
 def _thread_function(start_events, outputs, i, generator, slice_desc):
@@ -102,4 +102,5 @@ def _Threads(count):
                 yield data
 
         return wrapper
+
     return transformer

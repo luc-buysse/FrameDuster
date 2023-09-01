@@ -1,19 +1,21 @@
 import threading
 
-from frameduster.mongodb import _mark_done
-from frameduster.iterable import _generator
-from frameduster.config import config
+from mongodb import _mark_done
+from iterable import _generator
+from config import config
 
 
 def _Clerk(function_id):
     """
     Keeps track of the document processes by the user function.
     """
+
     def transformer(func, sub_proc_wrapped):
         def wrapper(input):
 
             def in_marker():
                 sem = threading.Semaphore(500)
+
                 def mark_done(_id, function_id):
                     _mark_done(_id, function_id)
                     sem.release()
@@ -42,4 +44,5 @@ def _Clerk(function_id):
                 yield from _generator(func, in_marker())
 
         return wrapper
+
     return transformer

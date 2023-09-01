@@ -2,16 +2,15 @@ import multiprocessing
 import os
 import copy
 
-from frameduster.iterable import _generator
-from frameduster.mongodb import mongo_connection
-from frameduster.config import config
-from frameduster.s3 import _iterate_batch_s3, _get_image
+from iterable import _generator
+from mongodb import mongo_connection
+from config import config
+from s3 import _iterate_batch_s3, _get_image
 
 from torch.utils.data import IterableDataset, DataLoader, Dataset, random_split
 import torchvision.transforms
 import torch
 import random
-from collections import Counter
 from PIL import Image
 
 from loguru import logger
@@ -64,7 +63,6 @@ class LocalDataset(Dataset):
                  query=None):
         self.data_field = data_field
         self.target_field = target_field
-        self.data_list = []
 
         machine_id = config["machine_id"]
         query[f'_local/{machine_id}/{data_field}'] = True
@@ -102,7 +100,7 @@ class LocalDataset(Dataset):
                 self.preprocess = self.preprocess()
             self.initialized = True
 
-        doc = self.data_list[item]
+        doc = self.all_docs[item]
         file_name = doc[self.data_field]
         dataset = doc['dataset']
 
@@ -120,7 +118,7 @@ class LocalDataset(Dataset):
                 return data
 
     def __len__(self):
-        return len(self.data_list)
+        return len(self.all_docs)
 
 
 class S3PickDataset(Dataset):
@@ -215,7 +213,7 @@ class SliceShuffleBuffer:
         while (not self.full_stop and
                len(self.buffer) < self.shuffle_size):
             # stop filling the buffer at the end of the slice
-            if self.slice_size and self.current_slice_size > self.slice_size:
+            if self.slice_size and self.current_slice_size >= self.slice_size:
                 break
 
             # if no more shared credit
@@ -236,6 +234,8 @@ class SliceShuffleBuffer:
         if len(self.buffer) == 0:
             raise StopIteration
 
+        self.current_slice_size += 1
+
         # at the end of the buffer, register the slice
         if self.slice_size and len(self.buffer) == 1:
             self.slice_bounds = (self.start_byte, self.pos)
@@ -244,14 +244,15 @@ class SliceShuffleBuffer:
             self.current_slice_size = 0
             self.start_byte = self.pos
 
-        return self.buffer.pop(random.randint(0, len(self.buffer)-1))
+        res = self.buffer.pop(random.randint(0, len(self.buffer) - 1))
+
+        return res
 
     def get_slice(self):
         if self.end_of_slice:
             self.end_of_slice = False
             return self.slice_bounds
         return None
-
 
 
 class S3Dataset(IterableDataset):
@@ -328,21 +329,21 @@ class S3Dataset(IterableDataset):
 
         if 'bounds' in slice_doc:
             return SliceShuffleBuffer(_iterate_batch_s3(
-                    slice_doc,
-                    get_bounds=True,
-                    slice=slice_doc['bounds'],
-                    query=self.query,
-                    **kwargs
-                ),
+                slice_doc,
+                get_bounds=True,
+                slice=slice_doc['bounds'],
+                query=self.query,
+                **kwargs
+            ),
                 self.shuffle_size,
                 sh_limit)
         else:
             return SliceShuffleBuffer(_iterate_batch_s3(
-                    slice_doc,
-                    get_bounds=True,
-                    query=self.query,
-                    **kwargs
-                ),
+                slice_doc,
+                get_bounds=True,
+                query=self.query,
+                **kwargs
+            ),
                 self.shuffle_size,
                 sh_limit,
                 self.slice_size)
@@ -371,35 +372,36 @@ class S3Dataset(IterableDataset):
             else:
                 assert self.num_workers == worker_info.num_workers
 
-            count = Counter([batch_doc["dataset"] for batch_doc in self.batch_list[self.worker_id]])
-            self.dataset_list, nb_per_dataset = list(count.keys()), list(count.values())
-
-            logger.info(f'Datasets for worker {self.worker_id} : {self.dataset_list} {nb_per_dataset}')
-
             # First slices are just batches
             self.slices = {}
-            for name in self.dataset_list:
+            to_delete = []
+            for name in self.composition:
                 # Select only the batches of this dataset
                 self.slices[name] = ([batch_doc for batch_doc in self.batch_list[self.worker_id] if
                                       batch_doc["dataset"] == name])
+                if len(self.slices[name]) == 0:
+                    to_delete.append(name)
 
-            builded_slices = {dataset_name: [] for dataset_name in self.dataset_list}
+            for name in to_delete:
+                del self.composition[name]
+
+            builded_slices = {dataset_name: [] for dataset_name in self.composition}
         # *********
 
         # Shuffle slices
-        for dataset_name in self.dataset_list:
+        for dataset_name in self.composition:
             random.shuffle(self.slices[dataset_name])
 
         slices = copy.deepcopy(self.slices)
 
         # Initialize slice_doc and batch_it with the first slice of every dataset
         current_slice_doc = {dataset_name: slices[dataset_name].pop() for dataset_name in
-                             self.dataset_list}
+                             self.composition}
         current_slice_it = {dataset_name: self.get_slice(current_slice_doc[dataset_name]) for dataset_name in
-                            self.dataset_list}
+                            self.composition}
 
         # reset loop condition
-        for dataset_name in self.dataset_list:
+        for dataset_name in self.composition:
             up_count += 1
             dataset_up[dataset_name] = True
 
@@ -412,7 +414,7 @@ class S3Dataset(IterableDataset):
             else:
                 probabilities = {dataset: count / total_images for dataset, count in self.composition.items()}
             dataset_name = random.choices(list(probabilities.keys()), weights=list(probabilities.values()), k=1)[0]
-            if dataset_name not in self.dataset_list:
+            if dataset_name not in self.composition:
                 continue
 
             # Check if the dataset is still up
@@ -450,7 +452,6 @@ class S3Dataset(IterableDataset):
                         build_slice['bounds'] = mb_bounds
                         builded_slices[dataset_name].append(build_slice)
 
-
             # Build the item, preprocess it, check the result
             if self.target_field:
                 if self.target_field not in doc:
@@ -473,10 +474,12 @@ class S3Dataset(IterableDataset):
         if first_pass:
             self.slices = builded_slices
 
+    def __len__(self):
+        return int(sum(self.composition.values()))
+
 
 def get_dataloaders(data_field, target_field, ratios, batch_size, num_workers, preprocess,
                     composition, source, pick, query, shuffle_size, slice_size):
-    collection = mongo_connection[config['project_name'] + "-pipeline"]
     collection_s3 = mongo_connection[config['project_name'] + "-pipeline-s3"]
 
     if source == "s3":
@@ -493,19 +496,20 @@ def get_dataloaders(data_field, target_field, ratios, batch_size, num_workers, p
                                batch_list[slices[1] + slices[0]:])
 
                 # compute compositions for each subset
-                compositions = [{key: value * ratios[i] for key, value in composition.items()} for i in range(len(ratios))]
+                compositions = [{key: value * ratios[i] for key, value in composition.items()} for i in
+                                range(len(ratios))]
 
                 # build datasets
                 tvt_datasets = (S3Dataset(sub_batch_list,
                                           target_field,
                                           num_workers,
                                           preprocess,
-                                          composition,
+                                          comp,
                                           query=query,
                                           shuffle_size=shuffle_size,
                                           slice_size=slice_size) for
-                                    sub_batch_list, composition in
-                                    zip(tvt_batches, compositions))
+                                sub_batch_list, comp in
+                                zip(tvt_batches, compositions))
             else:
                 dataset = S3Dataset(batch_list, target_field, num_workers, preprocess, composition,
                                     shuffle_size=shuffle_size,
@@ -555,11 +559,12 @@ def get_dataloaders(data_field, target_field, ratios, batch_size, num_workers, p
             batch_size=batch_size,
             generator=torch.Generator().manual_seed(config['train_seed']),
             num_workers=num_workers,
-            persistent_workers=True,
+            persistent_workers=(source == "database"),
             pin_memory=True,
-            shuffle=(source != 's3' or pick),
-            drop_last=True
-        ) for subset in tvt_datasets]
+            shuffle=(source != 's3' or pick) and i == 0,
+            drop_last=True,
+            prefetch_factor=16,
+        ) for i, subset in enumerate(tvt_datasets)]
 
         return tvt_dataloaders
     else:
@@ -571,7 +576,8 @@ def get_dataloaders(data_field, target_field, ratios, batch_size, num_workers, p
             persistent_workers=True,
             pin_memory=True,
             shuffle=(source != 's3' or pick),
-            drop_last=True
+            drop_last=True,
+            prefetch_factor=16,
         )
 
 
@@ -585,8 +591,8 @@ def _Load(data,
           source=None,
           query=None,
           pick=False,
-          shuffle_size=1000,
-          slice_size=50
+          shuffle_size=50,
+          slice_size=1000
           ):
     def transformer(func, sub_proc_wrapped):
         def wrapper(*args, **kwargs):

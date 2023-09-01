@@ -1,10 +1,11 @@
 import re
+
+from config import config
+from mongodb import mongo_connection
+
 from concurrent.futures import ThreadPoolExecutor
 import json
 from tqdm import tqdm
-
-from frameduster.config import config
-from frameduster.mongodb import mongo_connection
 
 # Associates function_id with a service planning
 user_functions = {}
@@ -54,8 +55,9 @@ def Scraper(name, dataset=None):
                     dec[2]['dataset_name'] = dataset
 
                 # Check for a progress bar
-                if 'pbar' in dec[2] and dec[2]['pbar'] is True:
-                    pbar_config[function_id].add('output')
+                if 'pbar' in dec[2]:
+                    if dec[2]['pbar'] is True:
+                        pbar_config[function_id].add('output')
                     del dec[2]['pbar']
             elif dec[0] == "Input":
                 need_input = dec[1][0] not in ('feed', 'pipe')
@@ -64,8 +66,9 @@ def Scraper(name, dataset=None):
                     dec[2]['dataset_name'] = dataset
 
                 # Check for a progress bar
-                if 'pbar' in dec[2] and dec[2]['pbar'] is True:
-                    pbar_config[function_id].add('input')
+                if 'pbar' in dec[2]:
+                    if dec[2]['pbar'] is True:
+                        pbar_config[function_id].add('input')
                     del dec[2]['pbar']
             elif dec[0] == "Processes":
                 if need_output:
@@ -82,8 +85,8 @@ def Scraper(name, dataset=None):
         user_functions[function_id] = service_planning
 
         return service_planning[1]
-    return transformer
 
+    return transformer
 
 
 def Preprocessor(name):
@@ -120,16 +123,18 @@ def Preprocessor(name):
                 dec[2]['function_id'] = function_id
 
                 # Check for a progress bar
-                if 'pbar' in dec[2] and dec[2]['pbar'] is True:
-                    pbar_config[function_id].add('output')
+                if 'pbar' in dec[2]:
+                    if dec[2]['pbar'] is True:
+                        pbar_config[function_id].add('output')
                     del dec[2]['pbar']
             elif dec[0] == "Input":
                 need_input = dec[1][0] not in ('feed', 'pipe')
                 dec[2]['function_id'] = function_id
 
                 # Check for a progress bar
-                if 'pbar' in dec[2] and dec[2]['pbar'] is True:
-                    pbar_config[function_id].add('input')
+                if 'pbar' in dec[2]:
+                    if dec[2]['pbar'] is True:
+                        pbar_config[function_id].add('input')
                     del dec[2]['pbar']
             elif dec[0] == "Processes":
                 if need_output:
@@ -147,6 +152,7 @@ def Preprocessor(name):
         return service_planning[1]
 
     return transformer
+
 
 def Trainer(name):
     """
@@ -183,12 +189,6 @@ def Trainer(name):
                 if need_input:
                     dec[1].append(True)
             elif dec[0] == "Load":
-                try:
-                    composition = dec[2]['composition']
-                    split = dec[2]['split']
-                    batch_size = dec[2]['batch_size']
-                except KeyError:
-                    raise Exception('Missing mandatory @Load arguments for a @Trainer.')
                 has_load = True
 
         # Check for a @Load decorator
@@ -196,17 +196,14 @@ def Trainer(name):
             raise Exception('@Load mandatory for a Trainer')
 
         # Add train decorator
-        decorators = (*decorators, ("Train", [], {
-            'composition': composition,
-            'split': split,
-            'batch_size': batch_size
-        }))
+        decorators = (*decorators, ("Train", [], {}))
         service_planning = (json.dumps(decorators), service_planning[1])
 
         # Store the pipeline under the appropriate command
         user_functions[function_id] = service_planning
 
         return service_planning[1]
+
     return transformer
 
 

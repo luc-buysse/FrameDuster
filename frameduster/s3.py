@@ -7,6 +7,7 @@ import tarfile
 import glob
 import hashlib
 import threading
+
 import urllib3
 from loguru import logger
 from concurrent.futures import ThreadPoolExecutor
@@ -15,17 +16,23 @@ import pymongo.errors
 from pymongo.collection import ReturnDocument
 from PIL import Image, UnidentifiedImageError
 import shutil
+from loguru import logger
 
-from frameduster.config import config
-from frameduster.mongodb import _write_document, mongo_connection
-from frameduster.config import _random_name
+from config import config
+from mongodb import _write_document, mongo_connection
+from config import _random_name
+from manager import manager
 
 _cache_size = 0
+_cache_lock = threading.Lock()
 _main_cache = os.path.join(config['app_path'], 'data/_cache')
 _mongo_cache = os.path.join(config['app_path'], 'data/_mongo_cache')
 _tar_cache = os.path.join(config['app_path'], 'data/_tar_cache')
 _stream_cache = os.path.join(config['app_path'], 'data/_stream_cache')
 _stream_complete_cache = os.path.join(config['app_path'], 'data/_stream_complete_cache')
+
+os.makedirs(_stream_cache, exist_ok=True)
+os.makedirs(_stream_complete_cache, exist_ok=True)
 
 
 def _get_s3_client():
@@ -87,52 +94,28 @@ def _iterate_batch_s3(doc_s3,
     dataset = doc_s3['dataset']
     tar_origin = '/'.join([dataset, doc_s3['_id']])
 
-    start_byte = 0
-    if function_id:
+    global_start_byte = 0
+    if slice and len(slice) > 0:
+        global_start_byte = slice[0]
+    elif function_id:
         init_doc = collection_s3.find_one({'_id': doc_s3['_id']}, {function_id + "_sb": 1})
 
         if init_doc and function_id + "_sb" in init_doc:
-            start_byte = init_doc[function_id + "_sb"]
-
-    # Slice overwrites start_bytes
-    range_str = 'bytes='
-    if slice:
-        if len(slice) == 0:
-            range_str += '-'
-        if len(slice) >= 1:
-            range_str += f'{slice[0]}-'
-        if len(slice) >= 2:
-            range_str += f'{slice[1]}'
-    else:
-        range_str = f"bytes={start_byte}-"
+            global_start_byte = init_doc[function_id + "_sb"]
 
     http = urllib3.PoolManager()
-
     file_url = os.path.join(config['s3']['base_url'], config['s3']['bucket']) + f'/{tar_origin}'
-    obj = http.request('get',
-                       file_url,
-                       preload_content=False,
-                       headers={'Range': range_str})
 
-    # the following is a tar reader which is provided with
-    # the http stream as fileobj
-    # the fileobj is supposed to have a seek method
-    # but the stream has not, so to maintain the reader
-    # in the illusion that it has, we need to make
-    # sure the stream cursor is always aligned with
-    # the reader's offset
-    header_reader = tarfile.TarFile(fileobj=obj, mode='r')
+    global_end_byte = None
+    if slice and len(slice) > 1:
+        global_end_byte = slice[1]
 
-    if not header_reader.firstmember:
-        raise Exception(
-            f'The tar file seems to be corrupted, the first header has not been read correctly at url : {file_url}')
-
-    start_file_byte = 0
+    start_byte = global_start_byte
 
     # Setup checkout thread function
     sem = threading.Semaphore(threads)
     chk_running = 0
-    out_queue = queue.Queue(maxisze=max_preload)
+    out_queue = queue.Queue(maxsize=max_preload)
 
     def checkout(img, filename, bounds):
         nonlocal query
@@ -163,7 +146,7 @@ def _iterate_batch_s3(doc_s3,
             file_doc = main_collection.find_one(*query_args)
 
         if not file_doc:
-            logger.error("Impossible de recuperer le document...")
+            logger.error(f"Cannot fetch the document for query : {query}")
             sem.release()
             chk_running -= 1
             return
@@ -182,16 +165,37 @@ def _iterate_batch_s3(doc_s3,
         sem.release()
         chk_running -= 1
 
-    def loader():
-        nonlocal start_file_byte
+    def get_obj(start):
+        range_str = f'bytes={start}-'
+        if global_end_byte:
+            range_str += f'{global_end_byte}'
+
+        return http.request('get',
+                            file_url,
+                            preload_content=False,
+                            headers={'Range': range_str})
+
+    loader_running = True
+
+    def loader(from_byte):
+        nonlocal start_byte
         nonlocal chk_running
+        nonlocal loader_running
+
+        obj = get_obj(from_byte)
+        header_reader = tarfile.TarFile(fileobj=obj, mode='r')
 
         while True:
-            # check for end of stream
-            if slice and len(slice) >= 2 and header_reader.offset >= slice[1]:
+            try:
+                next_file = header_reader.next()
+            except tarfile.ReadError:
                 break
-
-            next_file = header_reader.next()
+            except io.UnsupportedOperation:
+                # logger.error(f"Relaunching loader thread for : {doc_s3['_id']}")
+                # threading.Thread(target=loader, args=(start_byte,)).start()
+                break
+            except BaseException:
+                break
             if next_file is None:  # end of file, exit function
                 break
 
@@ -207,10 +211,15 @@ def _iterate_batch_s3(doc_s3,
             sem.acquire()
 
             chk_running += 1
-            threading.Thread(target=checkout, args=(img, next_file.name, (start_file_byte, obj.tell()))).start()
-            start_file_byte = obj.tell()
+            end_byte = global_start_byte + obj.tell()
+            threading.Thread(target=checkout, args=(img, next_file.name, (start_byte, end_byte))).start()
+            start_byte = end_byte
 
-    loader_thread = threading.Thread(target=loader)
+            if global_end_byte and start_byte >= global_end_byte:
+                break
+        loader_running = False
+
+    loader_thread = threading.Thread(target=loader, args=(global_start_byte,))
     loader_thread.start()
 
     # send out the content of the output queue
@@ -218,7 +227,7 @@ def _iterate_batch_s3(doc_s3,
         try:
             yield out_queue.get(timeout=0.5)
         except queue.Empty:
-            if not loader_thread.is_alive() and chk_running <= 0:
+            if not loader_running and chk_running <= 0:
                 break
 
 
@@ -237,8 +246,6 @@ def _iterate_s3(function_id, field, query, projection):
         doc_s3 = collection_s3.find_one_and_update(query_s3,
                                                    {'$set': {function_id: False}},
                                                    {'_id': 1, 'dataset': 1, 'field': 1})
-
-        logger.info(f"Running : {doc_s3['_id']}")
 
         if not doc_s3:
             return
@@ -289,10 +296,10 @@ def _recover_s3_cache(function_id):
         if 'shared_context' in config:
             fid_dataset = f'{function_id}/{doc["dataset"]}'
 
-            if fid_dataset not in config['shared_context']['cache_size']:
-                config['shared_context']['cache_size'][fid_dataset] = 0
+            if fid_dataset not in manager._global.cache_size:
+                manager._global.cache_size[fid_dataset] = 0
 
-            config['shared_context']['cache_size'][fid_dataset] += file_size
+            manager._global.cache_size[fid_dataset] += file_size
 
         # single process
         else:
@@ -433,25 +440,26 @@ def _write_image(document, image_file, function_id, file_name_field=None):
     # otherwise block access to cache and flush it
     if 'shared_context' in config:
         # lock shared cache_size
-        cmlock = config['shared_context']['cache_s3_lock']
-        cmlock.acquire()
+        manager._global.cache_lock.acquire()
 
         fid_dataset = f'{function_id}/{dataset}'
-        if fid_dataset not in config['shared_context']['cache_size']:
-            config['shared_context']['cache_size'][fid_dataset] = 0
+        if fid_dataset not in manager._global.cache_size:
+            manager._global.cache_size[fid_dataset] = 0
 
-        config['shared_context']['cache_size'][fid_dataset] += file_size
+        manager._global.cache_size[fid_dataset] += file_size
 
-        if config['shared_context']['cache_size'][fid_dataset] < config['s3']['flush_size']:
-            cmlock.release()
+        if manager._global.cache_size[fid_dataset] < config['s3']['flush_size']:
+            manager._global.cache_lock.release()
             return
     else:
         global _cache_size
+        _cache_lock.acquire()
         if _cache_size is None:
             _cache_size = file_size
         else:
             _cache_size += file_size
             if _cache_size < config['s3']['flush_size']:
+                _cache_lock.release()
                 return
 
     # ---------- flush cache -------------
@@ -506,19 +514,23 @@ def _write_image(document, image_file, function_id, file_name_field=None):
     batch_file.close()
 
     # resume other processes work
-    if 'shared_context' in config:
-        config['shared_context']['cache_size'][f'{function_id}/{dataset}'] = 0
-        cmlock.release()
+    if manager._global:
+        manager._global.cache_size[f'{function_id}/{dataset}'] = 0
+        manager._global.cache_lock.release()
     else:
         _cache_size = 0
+        _cache_lock.release()
 
     # upload the tar file on the side and resume work
     threading.Thread(target=_upload_tar_batch, args=(tar_path,)).start()
 
 
-def _delete_s3_batch(s3_batch, sem):
-    _s3_client.delete_object(Bucket=config['s3']['bucket'],
-                             Key=f'{s3_batch["dataset"]}/{s3_batch["_id"]}')
+def _delete_s3_batch(s3_batch, sem, pbar, full):
+    try:
+        _s3_client.delete_object(Bucket=config['s3']['bucket'],
+                                 Key=f'{s3_batch["dataset"]}/{s3_batch["_id"]}')
+    except:
+        pass
 
     # delete the tar name field
     unset_fields = {
@@ -526,86 +538,44 @@ def _delete_s3_batch(s3_batch, sem):
         f'_pos_{s3_batch["field"]}': ''
     }
     # if the field is not _id, delete the file name field
-    if s3_batch['field'] != '_id':
+    if s3_batch['field'] != '_id' and full:
         unset_fields[s3_batch['field']] = ''
 
     # dataset
     mongo_connection[f'{s3_batch["dataset"]}-dataset-s3'].delete_one({'_id': s3_batch['_id']})
-    mongo_connection[f'{s3_batch["dataset"]}-dataset-s3'].update_many(
+    mongo_connection[f'{s3_batch["dataset"]}-dataset'].update_many(
         {f'_tar_{s3_batch["field"]}': s3_batch['_id']},
         {'$unset': unset_fields})
 
     # local
     mongo_connection[f'{config["project_name"]}-pipeline-s3'].delete_one({'_id': s3_batch['_id']})
-    mongo_connection[f'{config["project_name"]}-pipeline-s3'].update_many(
+    mongo_connection[f'{config["project_name"]}-pipeline'].update_many(
         {f'_tar_{s3_batch["field"]}': s3_batch['_id']},
         {'$unset': unset_fields})
 
+    pbar.update()
     sem.release()
 
 
-def _delete_field(dataset, field):
+def _delete_field(dataset, field, full):
     # list all available batches related to this field in the dataset collection
     # and the project collection
-    s3_batches = set()
-    s3_batches = s3_batches.union(mongo_connection[f'{dataset}-dataset-s3'].find({'field': field}))
-    s3_batches = s3_batches.union(mongo_connection[f'{config["project_name"]}-pipeline-s3'].find({'field': field,
-                                                                                                  'dataset': dataset}))
+    s3_batches = {}
+
+    for batch in mongo_connection[f'{dataset}-dataset-s3'].find({'field': field}):
+        s3_batches[batch['_id']] = batch
+
+    for batch in mongo_connection[f'{config["project_name"]}-pipeline-s3'].find({'field': field, 'dataset': dataset}):
+        s3_batches[batch['_id']] = batch
 
     sem = threading.Semaphore(100)
-    pbar = tqdm(s3_batches)
-    pbar.set_description_str(f"Deleting {len(s3_batches)} batches on s3...")
-    for s3_batch in pbar:
+    pbar = tqdm(total=len(s3_batches), desc=f"Deleting {len(s3_batches)} batches on s3...")
+    threads = []
+    for s3_batch in s3_batches.values():
         sem.acquire()
-        threading.Thread(target=_delete_s3_batch, args=(s3_batch, sem)).start()
+        thread = threading.Thread(target=_delete_s3_batch, args=(s3_batch, sem, pbar, full))
+        thread.start()
+        threads.append(thread)
 
-
-def _update_s3():
-    http = urllib3.PoolManager()
-
-    batch_list = mongo_connection[f'{config["project_name"]}-pipeline-s3'].find({})
-    fnf_list = set()
-    batches = {}
-    for batch in batch_list:
-        fnf_list.add(batch_list['field'])
-        batch['holes'] = []
-        batches[batch['_id']] = batch
-
-    for file_name_field in fnf_list:
-        del_list = mongo_connection[f'{config["project_name"]}-pipeline'].find({
-            f'_del_{file_name_field}': True
-        }, {f'_pos_{file_name_field}': True})
-
-        for doc in del_list:
-            tar_name = doc[f"_tar_{file_name_field}"]
-            dataset = doc["dataset"]
-            start_byte = doc[f"_pos_{file_name_field}"]
-
-            tar_obj = _s3_client.get_object(Bucket=config["s3"]["bucket"],
-                                            Key=f'/{dataset}/{tar_name}')
-
-            # get end byte
-            file_url = os.path.join(config['s3']['base_url'], config['s3']['bucket']) + f'/{dataset}/{tar_name}'
-            obj = http.request('get',
-                               file_url,
-                               preload_content=False,
-                               headers={'Range': f'bytes={start_byte}-'})
-            file_info = tarfile.TarFile(fileobj=obj, mode='r').first_member
-            end_byte = start_byte + file_info._block(file_info.size)
-
-            batches[doc[tar_name]]["holes"].append((start_byte, end_byte))
-            batches[doc[tar_name]]["size"] = tar_obj["ContentLength"]
-
-    for batch in batches.values():
-        batch["holes"].sort(lambda x: x[0])
-        batch["slices"] = []
-
-        current_start = 0
-        current_byte = 0
-        for hole in batch["holes"]:
-            slice = (current_start, hole[0])
-            if slice[1] - slice[0] > 0:
-                batch["slices"].append(slice)
-        slice = (current_start, batch["size"])
-        if batch['holes'][1] > batch["size"] - 5 * 512:
-            pass
+    for thread in threads:
+        thread.join()

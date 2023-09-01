@@ -1,17 +1,22 @@
 import argparse
 import time
 from datetime import datetime
-
+import sys
 from loguru import logger
 
 # wrap user code in _user_functions
-from frameduster import user_functions, pbar_config
-from frameduster.iterable import _flush
-from frameduster.toppings import _add_decorators, _setup_pbar, _setup_mixed_context
-from frameduster.mongodb import _reset_function, _state_function
-from frameduster.s3 import _delete_field
-from frameduster.local import _update_local, _set_local, _unbind_local, _scan_local
-from frameduster.config import config
+from wrappers import user_functions, pbar_config
+from iterable import _flush
+from toppings import _add_decorators, _setup_pbar, _setup_mixed_context
+from mongodb import _reset_function, _state_function
+from s3 import _delete_field
+from local import _update_local, _set_local, _unbind_local, _scan_local
+from config import config
+
+import torchvision
+
+torchvision.disable_beta_transforms_warning()
+
 
 def create_parser():
     parser = argparse.ArgumentParser(prog=config['project_name'])
@@ -36,7 +41,7 @@ def create_parser():
 
     # pipe command
     pipe_parser = subparsers.add_parser("pipe",
-                                         help="Pipes multiple services together : pipe -s <command1> -s <command2> ... ")
+                                        help="Pipes multiple services together : pipe -s <command1> -s <command2> ... ")
     pipe_parser.add_argument('-s',
                              '--sub',
                              nargs="+",
@@ -47,18 +52,19 @@ def create_parser():
     delete_parser = subparsers.add_parser("delete",
                                           help="Deletes all s3 files of a dataset in a specific compartment : delete <dataset> <compartment>")
     delete_parser.add_argument(dest='delete_args', nargs='+')
+    delete_parser.add_argument('-f', '--full', dest='full', action='store_true')
 
     # reset command
     reset_parser = subparsers.add_parser("reset",
-                                        help="Resets a service's progress : reset (--full) <cmd>")
+                                         help="Resets a service's progress : reset (--full) <cmd>")
     reset_parser.add_argument(nargs='+',
                               action="append",
                               dest='reset_args')
     reset_parser.add_argument('-f',
-                             '--full',
-                             action="store_true",
-                             dest='full',
-                             required=False)
+                              '--full',
+                              action="store_true",
+                              dest='full',
+                              required=False)
     reset_parser.add_argument('-d',
                               '--delete',
                               action="store_true",
@@ -119,7 +125,7 @@ def main(args):
         n_steps = len(args.pipe_args)
         for i, sub_proc_args in enumerate(args.pipe_args):
             function_id = parse_args(arg_parser.parse_args(sub_proc_args),
-                                          "Only scrapers and preprocessors can be piped together.")
+                                     "Only scrapers and preprocessors can be piped together.")
             sub_proc_wrapped = user_functions[function_id]
 
             if i == 0 and 'input' in pbar_config[function_id]:
@@ -138,7 +144,8 @@ def main(args):
     elif hasattr(args, "train_args"):
         if isinstance(args.train_args, str):
             try:
-                _flush(_add_decorators(*user_functions["train"][args.train_args]))
+                function_id = f'_train_{args.train_args}'
+                _flush(_add_decorators(*user_functions[function_id]))
             except KeyError:
                 raise Exception(f"{args.train_args} is not a valid trainer name")
         else:
@@ -166,9 +173,9 @@ def main(args):
             raise Exception(f"{args.import_args} is not a valid importer name")
     elif hasattr(args, 'delete_args'):
         if isinstance(args.delete_args, str) or len(args.delete_args) > 2:
-            raise Exception('Delete command takes two arguments : delete <dataset> <field>')
+            raise Exception('Delete command takes two arguments : delete <dataset> <field> (-f/--full)')
         else:
-            _delete_field(*args.delete_args)
+            _delete_field(*args.delete_args, args.full)
     elif hasattr(args, 'local_args'):
         if args.local_args[0][0] == 'update':
             _update_local()
@@ -201,9 +208,14 @@ def main(args):
         logger.warning('Invalid argument, type --help for help.')
         run_continuous()
 
+
 arg_parser = create_parser()
 
+
 def run_cmd():
+    logger.remove()
+    logger.add(sys.stdout, enqueue=True)
+
     logger.info('**********************************')
     logger.info('*         PROGRAM START          *')
     logger.info('*     ' + datetime.now().strftime("%d/%m/%Y %H:%M:%S") + '        *')
@@ -219,6 +231,15 @@ def run_cmd():
 
 def run_continuous():
     while True:
-        cmd = input(f"{config['project_name']}$").split()
-        main(arg_parser.parse_args(cmd))
-        time.sleep(0.2)
+        try:
+            logger.complete()
+            cmd = input(f"{config['project_name']}$").split()
+            if len(cmd) == 0:
+                continue
+            if cmd[0] == 'exit':
+                break
+            main(arg_parser.parse_args(cmd))
+            time.sleep(0.2)
+        except BaseException as e:
+            logger.error(e)
+            continue

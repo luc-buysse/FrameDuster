@@ -1,15 +1,15 @@
 import inspect
 import multiprocessing
-import threading
 from multiprocessing import connection
 import json
 
-from frameduster.iterable import (_generator, _flush, )
-from frameduster.outputs import _Output
-from frameduster.inputs import _Input
-from frameduster.config import config, _local
-from frameduster.threads import _Threads
-from frameduster.clerk import _Clerk
+from iterable import (_generator, _flush, )
+from outputs import _Output
+from inputs import _Input
+from config import config, _local
+from threads import _Threads
+from clerk import _Clerk
+from manager import _Global, manager
 
 _decode_decorator = {
     "Output": _Output,
@@ -18,62 +18,6 @@ _decode_decorator = {
     "Clerk": _Clerk
 }
 
-
-def _manager_listener(manager):
-    """
-    This function listens for requests to add manager proxy items into the shared context.
-    """
-
-    while True:
-        fid_dataset, request = config['shared_context']['request_queue'].get()
-
-        if request == "s3_complete_lock":
-            config['shared_context']['s3_complete_lock'][fid_dataset] = manager.Lock()
-        elif request == "s3_complete_comm":
-            config['shared_context']['s3_complete_event'][fid_dataset] = manager.Event()
-            config['shared_context']['s3_complete_pipe'][fid_dataset] = manager.Queue()
-
-        # Mark as done
-        config['shared_context']['ack_queue'].append((fid_dataset, request))
-
-def _init_shared_context():
-    manager = multiprocessing.Manager()
-
-    shared_context = {}
-
-    # cache control
-    shared_context['cache_size'] = manager.dict()
-    shared_context['cache_s3_lock'] = multiprocessing.Lock()
-    shared_context['mongo_s3_lock'] = multiprocessing.Lock()
-
-    # index control
-    shared_context['to_index'] = manager.Queue()
-
-    # recover
-    shared_context['recovered'] = manager.list()
-    shared_context['recover_lock'] = manager.Lock()
-
-    # s3 streams
-    shared_context['s3_stream'] = manager.dict()
-    shared_context['s3_stream_size'] = manager.dict()
-    shared_context['s3_stream_user'] = manager.dict()
-    shared_context['s3_stream_part'] = manager.dict()
-    shared_context['s3_stream_lock'] = multiprocessing.Lock()
-
-    # need to store mutable data structures
-    # so it's initialized by the manager_listener thread
-    shared_context['s3_complete_event'] = manager.dict()
-    shared_context['s3_complete_pipe'] = manager.dict()
-    shared_context['s3_complete_lock'] = manager.dict()
-
-    # handle for the manager listener
-    shared_context['request_queue'] = multiprocessing.Queue()
-    shared_context['ack_queue'] = multiprocessing.Queue()
-
-    config['shared_context'] = shared_context
-
-    # launch the manager listener
-    threading.Thread(target=_manager_listener, args=(manager,)).start()
 
 def _add_decorators(decorators_str, func):
     decorators = json.loads(decorators_str)
@@ -90,6 +34,7 @@ def _add_decorators(decorators_str, func):
     sub_proc_tuple = (next_decorators_str, func)
     return dec(*dec_args, **dec_kwargs)(_add_decorators(*sub_proc_tuple), sub_proc_tuple)
 
+
 def _sub_feeder(worker_conn):
     while True:
         # ask for data
@@ -103,6 +48,7 @@ def _sub_feeder(worker_conn):
         # return it
         yield resp
 
+
 def _sub_transmitter(func, worker_conn, *args, **kwargs):
     for item in _generator(func, *args, **kwargs):
         if item is not None and worker_conn is not None:
@@ -114,12 +60,13 @@ def _sub_process(sub_proc_wrapped, shared_context, mixed_context, worker_conn_tu
 
     worker_conn, do_feed = worker_conn_tuple
 
-    config['shared_context'] = shared_context
+    manager._global = shared_context
     config['mixed_context'] = mixed_context
     if not do_feed:
         _sub_transmitter(_add_decorators(*sub_proc_wrapped), worker_conn)
     else:
         _sub_transmitter(_add_decorators(*sub_proc_wrapped), worker_conn, _sub_feeder(worker_conn))
+
 
 def _Processes(count, do_generate=False):
     def transformer(func, sub_proc_wrapped):
@@ -144,17 +91,17 @@ def _Processes(count, do_generate=False):
                 raise Exception('Two multi-processed routines cannot run at the same time.')
 
             # initialize shared context
-            _init_shared_context()
+            manager._global = _Global()
 
             # launch subprocesses
-            sub_process_count = count if dispatch else count-1
+            sub_process_count = count if dispatch else count - 1
             for i in range(sub_process_count):
                 wc = None if not dispatch else worker_conns[i]
 
                 process_slice = i + (1 if not dispatch else 0)
 
                 process = multiprocessing.Process(target=_sub_process, args=(sub_proc_wrapped,
-                                                                             config['shared_context'],
+                                                                             manager._global,
                                                                              config['mixed_context'],
                                                                              (wc, do_feed),
                                                                              (process_slice, count)))
@@ -204,5 +151,7 @@ def _Processes(count, do_generate=False):
                     process.join()
 
             yield None
+
         return wrapper
+
     return transformer

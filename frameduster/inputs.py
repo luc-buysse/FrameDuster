@@ -1,13 +1,13 @@
 from loguru import logger
 
+from iterable import _generator
+from mongodb import mongo_connection, _ensure_index, get_sub_cursor
+from s3 import _iterate_s3, _get_image
+from local import _iterate_local, _get_image_local
+from config import config, _local
+
 import threading
 import queue
-
-from frameduster.iterable import _generator
-from frameduster.mongodb import mongo_connection, _ensure_index, get_sub_cursor
-from frameduster.s3 import _iterate_s3, _get_image
-from frameduster.local import _iterate_local, _get_image_local
-from frameduster.config import config, _local
 
 
 class _mail_box:
@@ -45,7 +45,6 @@ class _mail_box:
                 return
             else:
                 yield item
-
 
 
 def _Input(
@@ -87,9 +86,15 @@ def _Input(
                 )).start()
 
                 # Add required fields to the projection
-                if projection:
+                if projection is not None:
                     projection['_id'] = 1
                     projection['dataset'] = 1
+
+                    if input_type == 's3' and pick:
+                        projection[f'_tar_{compartment}'] = 1
+                        projection[f'_pos_{compartment}'] = 1
+                    if input_type == 'local':
+                        projection[compartment] = 1
 
                 # Add required fields to the query
                 if not query:
@@ -110,7 +115,6 @@ def _Input(
                 # Now that the query is full, setup the global progress bar
                 if (config['mixed_context']['pbar_input_service'] == function_id and
                         config['mixed_context']['pbar']['input']):
-                    logger.info(f'Query for progress : {query}')
                     config['mixed_context']['pbar_query_queue'].put(
                         (function_id, query))
 
@@ -268,4 +272,5 @@ def _Input(
             yield from _generator(func, input_generator)
 
         return wrapper
+
     return transformer

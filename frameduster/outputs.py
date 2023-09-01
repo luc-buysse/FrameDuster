@@ -1,12 +1,14 @@
 import threading
+from loguru import logger
 
-from frameduster.iterable import _generator
-from frameduster.mongodb import _write_document
-from frameduster.s3 import _write_image, _recover_s3_cache
-from frameduster.s3_stream import _write_image_stream
-from frameduster.local import _write_local
-from frameduster.config import config
-from frameduster.config import _random_name
+from iterable import _generator
+from mongodb import _write_document, _ensure_index
+from s3 import _write_image, _recover_s3_cache
+from s3_stream import _write_image_stream
+from local import _write_local
+from config import _random_name
+from manager import manager
+
 
 def _fix_item(item, file_name):
     if file_name not in item:
@@ -18,11 +20,13 @@ def _fix_item(item, file_name):
 
 def _Output(output_type,
             compartment='_id',
-            function_id=None,
-            dataset_name=None,
             buffer_size=1,
             max_threads=1,
-            stream=False):
+            stream=False,
+
+            function_id=None,
+            dataset_name=None):
+    _ensure_index([f'_tar_{compartment}'])
 
     if output_type in ('database', 's3', 'local'):
         shared_attr = {}
@@ -36,7 +40,9 @@ def _Output(output_type,
                 for item in _generator(func, *args, **kwargs):
                     print(item)
                 yield None
+
             return wrapper
+
         return transformer
 
     # upload to database
@@ -44,6 +50,7 @@ def _Output(output_type,
         def transformer(func, sub_proc_wrapped):
             def wrapper(*args, **kwargs):
                 sem = threading.Semaphore(max_threads * 2)
+
                 def _write_thread(item, buffer_size):
                     _write_document(item, buffer_size)
                     sem.release()
@@ -61,7 +68,9 @@ def _Output(output_type,
                     threading.Thread(target=_write_thread, args=(item, buffer_size)).start()
 
                 yield None
+
             return wrapper
+
         return transformer
 
     # upload to s3
@@ -71,13 +80,14 @@ def _Output(output_type,
 
                 # try recovering cached data
                 # (needs to be done here after the processes are launched)
-                if 'shared_context' in config:
-                    with config['shared_context']['recover_lock']:
-                        if function_id not in config['shared_context']['recovered']:
-                            _recover_s3_cache(function_id)
-                            config['shared_context']['recovered'].append(function_id)
-                else:
-                    _recover_s3_cache(function_id)
+                if not stream:
+                    if manager._global:
+                        with manager._global.recover_lock:
+                            if not manager._global.recovered.value:
+                                _recover_s3_cache(function_id)
+                                manager._global.recovered.value = True
+                    else:
+                        _recover_s3_cache(function_id)
 
                 # Setup write function for multithreading
                 write_sem = threading.Semaphore(max_threads)
@@ -110,7 +120,9 @@ def _Output(output_type,
                     write_sem.acquire()
                     threading.Thread(target=write_s3_thread, args=(item, ws)).start()
                 yield None
+
             return wrapper
+
         return transformer
 
     # save locally
@@ -154,4 +166,5 @@ def _Output(output_type,
     elif output_type == "pipe":
         def transformer(func, sub_proc_wrapped):
             return func
+
         return transformer
