@@ -86,7 +86,8 @@ def _write_local(document, ws, file_name_field=None):
                                  upsert=True)
     # dataset collection
     mongo_connection[f'{document["dataset"]}-dataset-local'].update_one({'_id': config['machine_id']},
-                                                                        {'$set': {ds_fnf_field: local_count[ds_fnf_field]}},
+                                                                        {'$set': {
+                                                                            ds_fnf_field: local_count[ds_fnf_field]}},
                                                                         upsert=True)
 
     document[f'_local/{config["machine_id"]}/{file_name_field}'] = True
@@ -99,9 +100,9 @@ def _ensure_file_local(dataset, field, file_name, sem):
                                                                           f'_local/{config["machine_id"]}/{field}': True
                                                                       }})
     mongo_connection[f'{dataset}-dataset'].update_one({field: file_name},
-                                                          {'$set': {
-                                                              f'_local/{config["machine_id"]}/{field}': True
-                                                          }})
+                                                      {'$set': {
+                                                          f'_local/{config["machine_id"]}/{field}': True
+                                                      }})
     sem.release()
 
 
@@ -183,13 +184,14 @@ def _update_local():
                                      {'$set': {f'field/{dataset}/{file_name_field}': len(file_list)}},
                                      upsert=True)
         mongo_connection[f'{dataset}-dataset-local'].update_one({'_id': config['machine_id']},
-                                     {'$set': {f'field/{dataset}/{file_name_field}': len(file_list)}},
-                                    upsert=True)
+                                                                {'$set': {f'field/{dataset}/{file_name_field}': len(
+                                                                    file_list)}},
+                                                                upsert=True)
 
         logger.info(f'Done updating {dataset}/{file_name_field}'
-                       f'\n\tDeleted : {deleted_count}'
-                       f'\n\tAdded : {added_count}'
-                       f'\n\tCurrent : {len(file_list)}')
+                    f'\n\tDeleted : {deleted_count}'
+                    f'\n\tAdded : {added_count}'
+                    f'\n\tCurrent : {len(file_list)}')
 
 
 def _unbind_local(machine_id):
@@ -213,16 +215,14 @@ def _unbind_local(machine_id):
         logger.info(f"Deleting : {machine_id}/{field}")
 
         mongo_connection[f'{config["project_name"]}-pipeline'].update_many({field_to_delete: True},
-                                                                                 {'$unset': {field_to_delete: ''}})
+                                                                           {'$unset': {field_to_delete: ''}})
         mongo_connection[f'{dataset}-dataset'].update_many({field_to_delete: True},
-                                                                {'$unset': {field_to_delete: ''}})
+                                                           {'$unset': {field_to_delete: ''}})
 
     # delete local state description documents in project collection and dataset collections
     mongo_connection[f'{config["project_name"]}-pipeline-local'].delete_one({'_id': machine_id})
     for dataset in datasets:
         mongo_connection[f'{dataset}-dataset-local'].delete_one({'_id': machine_id})
-
-
 
 
 def _scan_local():

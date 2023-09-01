@@ -20,7 +20,6 @@ _decode_decorator = {
 
 
 def _add_decorators(decorators_str, func):
-
     decorators = json.loads(decorators_str)
 
     if len(decorators) == 0:
@@ -35,6 +34,7 @@ def _add_decorators(decorators_str, func):
     sub_proc_tuple = (next_decorators_str, func)
     return dec(*dec_args, **dec_kwargs)(_add_decorators(*sub_proc_tuple), sub_proc_tuple)
 
+
 def _sub_feeder(worker_conn):
     while True:
         # ask for data
@@ -47,6 +47,7 @@ def _sub_feeder(worker_conn):
 
         # return it
         yield resp
+
 
 def _sub_transmitter(func, worker_conn, *args, **kwargs):
     for item in _generator(func, *args, **kwargs):
@@ -65,6 +66,7 @@ def _sub_process(sub_proc_wrapped, shared_context, mixed_context, worker_conn_tu
         _sub_transmitter(_add_decorators(*sub_proc_wrapped), worker_conn)
     else:
         _sub_transmitter(_add_decorators(*sub_proc_wrapped), worker_conn, _sub_feeder(worker_conn))
+
 
 def _Processes(count, do_generate=False):
     def transformer(func, sub_proc_wrapped):
@@ -92,7 +94,7 @@ def _Processes(count, do_generate=False):
             manager._global = _Global()
 
             # launch subprocesses
-            sub_process_count = count if dispatch else count-1
+            sub_process_count = count if dispatch else count - 1
             for i in range(sub_process_count):
                 wc = None if not dispatch else worker_conns[i]
 
@@ -149,5 +151,7 @@ def _Processes(count, do_generate=False):
                     process.join()
 
             yield None
+
         return wrapper
+
     return transformer

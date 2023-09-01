@@ -40,7 +40,9 @@ def _Output(output_type,
                 for item in _generator(func, *args, **kwargs):
                     print(item)
                 yield None
+
             return wrapper
+
         return transformer
 
     # upload to database
@@ -48,6 +50,7 @@ def _Output(output_type,
         def transformer(func, sub_proc_wrapped):
             def wrapper(*args, **kwargs):
                 sem = threading.Semaphore(max_threads * 2)
+
                 def _write_thread(item, buffer_size):
                     _write_document(item, buffer_size)
                     sem.release()
@@ -65,7 +68,9 @@ def _Output(output_type,
                     threading.Thread(target=_write_thread, args=(item, buffer_size)).start()
 
                 yield None
+
             return wrapper
+
         return transformer
 
     # upload to s3
@@ -115,7 +120,9 @@ def _Output(output_type,
                     write_sem.acquire()
                     threading.Thread(target=write_s3_thread, args=(item, ws)).start()
                 yield None
+
             return wrapper
+
         return transformer
 
     # save locally
@@ -159,4 +166,5 @@ def _Output(output_type,
     elif output_type == "pipe":
         def transformer(func, sub_proc_wrapped):
             return func
+
         return transformer

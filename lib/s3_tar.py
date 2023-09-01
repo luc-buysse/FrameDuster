@@ -7,6 +7,7 @@ from tarfile import BLOCKSIZE
 from lib.config import config
 from lib.s3 import _s3_client
 
+
 def _process_tar_batch(object_list, target, to_do, event, last=False):
     ts = S3TarStream(target)
 
@@ -18,6 +19,7 @@ def _process_tar_batch(object_list, target, to_do, event, last=False):
     to_do[0] -= 1
     if to_do[0] == 0 and to_do[1]:
         event.set()
+
 
 def make_remote_tar(object_list, target):
     """
@@ -57,13 +59,15 @@ def make_remote_tar(object_list, target):
         if current_size > batch_size and total_size_inner - processed_size > min_batch_size:
             to_do[0] += 1
 
-            threading.Thread(target=_process_tar_batch, args=(current_list, f'{wfile}-{part_id}', to_do, done_event)).start()
+            threading.Thread(target=_process_tar_batch,
+                             args=(current_list, f'{wfile}-{part_id}', to_do, done_event)).start()
 
             part_id += 1
             current_list = []
             current_size = 0
     to_do[0] += 1
-    threading.Thread(target=_process_tar_batch, args=(current_list, f'{wfile}-{part_id}', to_do, done_event, True)).start()
+    threading.Thread(target=_process_tar_batch,
+                     args=(current_list, f'{wfile}-{part_id}', to_do, done_event, True)).start()
     to_do[1] = True
 
     done_event.wait()
@@ -72,6 +76,7 @@ def make_remote_tar(object_list, target):
                                                    Key=target)['UploadId']
 
     parts = []
+
     def add_part(i):
         nonlocal upload_id
         nonlocal target
@@ -88,7 +93,7 @@ def make_remote_tar(object_list, target):
         for i in range(part_id):
             workers.submit(add_part, i)
 
-    parts.sort(key=lambda x:  x['PartNumber'])
+    parts.sort(key=lambda x: x['PartNumber'])
     _s3_client.complete_multipart_upload(Bucket=config['s3']['bucket'],
                                          UploadId=upload_id,
                                          Key=target,
@@ -271,10 +276,10 @@ class S3TarStream:
 
     def add_padding(self):
         etag = _s3_client.upload_part_copy(Bucket=config['s3']['bucket'],
-                                    CopySource={'Bucket': config['s3']['bucket'], 'Key': self.padding},
-                                    UploadId=self.upload_id,
-                                    Key=self.key,
-                                    PartNumber=self.part_number)['CopyPartResult']['ETag']
+                                           CopySource={'Bucket': config['s3']['bucket'], 'Key': self.padding},
+                                           UploadId=self.upload_id,
+                                           Key=self.key,
+                                           PartNumber=self.part_number)['CopyPartResult']['ETag']
         self.parts.append({'ETag': etag, 'PartNumber': self.part_number})
         self.part_number += 1
 
@@ -285,11 +290,11 @@ class S3TarStream:
                                                CopySource={'Bucket': config['s3']['bucket'], 'Key': self.key},
                                                UploadId=self.upload_id,
                                                Key=self.key,
-                                               CopySourceRange=f'bytes={self.MIN_SIZE}-{size-1}',
+                                               CopySourceRange=f'bytes={self.MIN_SIZE}-{size - 1}',
                                                PartNumber=self.part_number)['CopyPartResult']['ETag']
         except Exception as e:
             print(e)
-            print("Bytes :", f'bytes={self.MIN_SIZE}-{size-1}')
+            print("Bytes :", f'bytes={self.MIN_SIZE}-{size - 1}')
         self.parts.append({'ETag': etag, 'PartNumber': self.part_number})
         self.part_number += 1
 

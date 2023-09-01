@@ -17,6 +17,7 @@ import torchvision
 
 torchvision.disable_beta_transforms_warning()
 
+
 def create_parser():
     parser = argparse.ArgumentParser(prog=config['project_name'])
 
@@ -40,7 +41,7 @@ def create_parser():
 
     # pipe command
     pipe_parser = subparsers.add_parser("pipe",
-                                         help="Pipes multiple services together : pipe -s <command1> -s <command2> ... ")
+                                        help="Pipes multiple services together : pipe -s <command1> -s <command2> ... ")
     pipe_parser.add_argument('-s',
                              '--sub',
                              nargs="+",
@@ -55,15 +56,15 @@ def create_parser():
 
     # reset command
     reset_parser = subparsers.add_parser("reset",
-                                        help="Resets a service's progress : reset (--full) <cmd>")
+                                         help="Resets a service's progress : reset (--full) <cmd>")
     reset_parser.add_argument(nargs='+',
                               action="append",
                               dest='reset_args')
     reset_parser.add_argument('-f',
-                             '--full',
-                             action="store_true",
-                             dest='full',
-                             required=False)
+                              '--full',
+                              action="store_true",
+                              dest='full',
+                              required=False)
     reset_parser.add_argument('-d',
                               '--delete',
                               action="store_true",
@@ -124,7 +125,7 @@ def main(args):
         n_steps = len(args.pipe_args)
         for i, sub_proc_args in enumerate(args.pipe_args):
             function_id = parse_args(arg_parser.parse_args(sub_proc_args),
-                                          "Only scrapers and preprocessors can be piped together.")
+                                     "Only scrapers and preprocessors can be piped together.")
             sub_proc_wrapped = user_functions[function_id]
 
             if i == 0 and 'input' in pbar_config[function_id]:
@@ -207,7 +208,9 @@ def main(args):
         logger.warning('Invalid argument, type --help for help.')
         run_continuous()
 
+
 arg_parser = create_parser()
+
 
 def run_cmd():
     logger.remove()
@@ -226,18 +229,17 @@ def run_cmd():
     logger.success('**********************************')
 
 
-
 def run_continuous():
     while True:
-        # try:
-        logger.complete()
-        cmd = input(f"{config['project_name']}$").split()
-        if len(cmd) == 0:
+        try:
+            logger.complete()
+            cmd = input(f"{config['project_name']}$").split()
+            if len(cmd) == 0:
+                continue
+            if cmd[0] == 'exit':
+                break
+            main(arg_parser.parse_args(cmd))
+            time.sleep(0.2)
+        except BaseException as e:
+            logger.error(e)
             continue
-        if cmd[0] == 'exit':
-            break
-        main(arg_parser.parse_args(cmd))
-        time.sleep(0.2)
-        # except BaseException as e:
-        #     logger.error(e)
-        #     continue

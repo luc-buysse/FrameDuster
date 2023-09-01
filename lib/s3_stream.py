@@ -16,6 +16,10 @@ from lib.manager import manager
 
 
 class ZeroPin:
+    """
+    Stores an internal value. Sets off when it hits 0.
+    """
+
     def __init__(self):
         self.lock = threading.Lock()
         self.count = 0
@@ -38,6 +42,10 @@ class ZeroPin:
 
 
 class MultipartUpload:
+    """
+    Multipart upload handle.
+    """
+
     def __init__(self, key, upload_id):
         self.key = key
         self.upload_id = upload_id
@@ -78,6 +86,10 @@ class MultipartUpload:
 
 
 class TarWriter:
+    """
+    Simple GNU tar writer. Found it slicker than using the tarfile writer, though it could be used as well.
+    """
+
     # Various constants from tarfile.py that we need
     NUL = b"\0"
     BLOCKSIZE = 512
@@ -190,6 +202,13 @@ class TarWriter:
 
 
 class _Substream:
+    """
+    A SubStream is a local - process level - handle on a stream.
+    It contains a copy of a MultipartUpload instance with the same upload_id as all the other SubStreams from other processes
+        attached to the same stream.
+    Any Substream must be attached to a "stream group" : a string identifying specific function_id, dataset and compartment.
+    """
+
     def __init__(self, stream_group):
         function_id, dataset, field = stream_group.split('/')
         self.stream_group = stream_group
@@ -269,6 +288,7 @@ class _Substream:
             self.n_bytes += n_bytes
 
     def unbind(self):
+        """ Prevents the Substream to be used again in any process """
         self.done = True
         if self.stream:
             self.stream.done.value = True

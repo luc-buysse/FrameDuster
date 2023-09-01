@@ -15,6 +15,7 @@ from lib.clerk import _Clerk
 from lib.mongodb import _index_manager, _global_pbar_thread, _local_pbar_thread
 from lib.config import config
 
+
 def _topping_transformer(name, args, kwargs):
     def transformer(input):
         dec_layer = [(name, args, kwargs)]
@@ -23,6 +24,7 @@ def _topping_transformer(name, args, kwargs):
         else:
             loaded_decorators = json.loads(input[0])
             return (json.dumps(dec_layer + loaded_decorators), input[1])
+
     return transformer
 
 
@@ -238,7 +240,6 @@ def __add_decorators(decorators_str, func):
     if dec == 'Input' and dec_args[0] not in ('feed', 'pipe'):
         threading.Thread(target=_local_pbar_thread).start()
         threading.Thread(target=_global_pbar_thread).start()
-
 
     next_decorators_str = json.dumps(decorators[1:])
 

@@ -8,11 +8,13 @@ import random
 if 'APP_PATH' not in os.environ:
     raise Exception('APP_PATH environment variable must be provided')
 
-
 # tool to generate random names
 _alphabet_for_random_generation = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+
+
 def _random_name(length=10):
     return ''.join([random.choice(_alphabet_for_random_generation) for i in range(length)])
+
 
 _local = threading.local()
 _local.total_slices = 1
@@ -52,6 +54,7 @@ def init_config():
             with open(mid_path, 'w') as f:
                 f.write(mid)
             return mid
+
     config['machine_id'] = _get_machine_id()
     config["pbar"] = {
         'input': False,

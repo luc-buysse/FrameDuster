@@ -85,8 +85,8 @@ def Scraper(name, dataset=None):
         user_functions[function_id] = service_planning
 
         return service_planning[1]
-    return transformer
 
+    return transformer
 
 
 def Preprocessor(name):
@@ -153,6 +153,7 @@ def Preprocessor(name):
 
     return transformer
 
+
 def Trainer(name):
     """
     Register service as Trainer.
@@ -202,6 +203,7 @@ def Trainer(name):
         user_functions[function_id] = service_planning
 
         return service_planning[1]
+
     return transformer
 
 

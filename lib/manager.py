@@ -2,7 +2,6 @@ import multiprocessing
 import threading
 
 
-
 class _GlobalStreamHandle:
     def __init__(self, wrapped):
         self.lock: multiprocessing.Lock = None
@@ -98,6 +97,7 @@ class _Global:
             self.request((_Global.REQ_NEW_STREAM_HANDLE, stream_key))
 
         return _GlobalStreamHandle(self.substream_handles[stream_key])
+
 
 class Manager:
     def __init__(self):

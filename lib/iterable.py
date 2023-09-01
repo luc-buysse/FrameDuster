@@ -10,6 +10,7 @@ def _correct_user(func):
             def corrected_func(*args, **kwargs):
                 func(*args, **kwargs)
                 yield None
+
             return corrected_func
         else:
             return func
@@ -18,6 +19,7 @@ def _correct_user(func):
             def corrected_func(*args, **kwargs):
                 func.__iter__(*args, **kwargs)
                 yield None
+
             return corrected_func
         else:
             return func.__iter__

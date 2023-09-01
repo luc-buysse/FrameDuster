@@ -9,7 +9,6 @@ from lib.config import config
 
 # **** descriptor ****
 
-
 @dataclass
 class TrainDescriptor:
     model: pl.LightningModule
@@ -18,6 +17,11 @@ class TrainDescriptor:
     accumulate_grad_batches: int = 1
     device: str = "cpu"
     val_check_interval: float = 1.0
+
+    def __getstate__(self):
+        d = self.__dict__
+        del d['model']
+        return d
 
 
 def _Train():

@@ -244,7 +244,7 @@ class SliceShuffleBuffer:
             self.current_slice_size = 0
             self.start_byte = self.pos
 
-        res = self.buffer.pop(random.randint(0, len(self.buffer)-1))
+        res = self.buffer.pop(random.randint(0, len(self.buffer) - 1))
 
         return res
 
@@ -253,7 +253,6 @@ class SliceShuffleBuffer:
             self.end_of_slice = False
             return self.slice_bounds
         return None
-
 
 
 class S3Dataset(IterableDataset):
@@ -330,21 +329,21 @@ class S3Dataset(IterableDataset):
 
         if 'bounds' in slice_doc:
             return SliceShuffleBuffer(_iterate_batch_s3(
-                    slice_doc,
-                    get_bounds=True,
-                    slice=slice_doc['bounds'],
-                    query=self.query,
-                    **kwargs
-                ),
+                slice_doc,
+                get_bounds=True,
+                slice=slice_doc['bounds'],
+                query=self.query,
+                **kwargs
+            ),
                 self.shuffle_size,
                 sh_limit)
         else:
             return SliceShuffleBuffer(_iterate_batch_s3(
-                    slice_doc,
-                    get_bounds=True,
-                    query=self.query,
-                    **kwargs
-                ),
+                slice_doc,
+                get_bounds=True,
+                query=self.query,
+                **kwargs
+            ),
                 self.shuffle_size,
                 sh_limit,
                 self.slice_size)
@@ -453,7 +452,6 @@ class S3Dataset(IterableDataset):
                         build_slice['bounds'] = mb_bounds
                         builded_slices[dataset_name].append(build_slice)
 
-
             # Build the item, preprocess it, check the result
             if self.target_field:
                 if self.target_field not in doc:
@@ -498,7 +496,8 @@ def get_dataloaders(data_field, target_field, ratios, batch_size, num_workers, p
                                batch_list[slices[1] + slices[0]:])
 
                 # compute compositions for each subset
-                compositions = [{key: value * ratios[i] for key, value in composition.items()} for i in range(len(ratios))]
+                compositions = [{key: value * ratios[i] for key, value in composition.items()} for i in
+                                range(len(ratios))]
 
                 # build datasets
                 tvt_datasets = (S3Dataset(sub_batch_list,
@@ -509,8 +508,8 @@ def get_dataloaders(data_field, target_field, ratios, batch_size, num_workers, p
                                           query=query,
                                           shuffle_size=shuffle_size,
                                           slice_size=slice_size) for
-                                    sub_batch_list, comp in
-                                    zip(tvt_batches, compositions))
+                                sub_batch_list, comp in
+                                zip(tvt_batches, compositions))
             else:
                 dataset = S3Dataset(batch_list, target_field, num_workers, preprocess, composition,
                                     shuffle_size=shuffle_size,

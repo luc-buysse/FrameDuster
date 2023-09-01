@@ -176,6 +176,7 @@ def _iterate_batch_s3(doc_s3,
                             headers={'Range': range_str})
 
     loader_running = True
+
     def loader(from_byte):
         nonlocal start_byte
         nonlocal chk_running
@@ -578,54 +579,3 @@ def _delete_field(dataset, field, full):
 
     for thread in threads:
         thread.join()
-
-
-def _update_s3():
-    http = urllib3.PoolManager()
-
-    batch_list = mongo_connection[f'{config["project_name"]}-pipeline-s3'].find({})
-    fnf_list = set()
-    batches = {}
-    for batch in batch_list:
-        fnf_list.add(batch_list['field'])
-        batch['holes'] = []
-        batches[batch['_id']] = batch
-
-    for file_name_field in fnf_list:
-        del_list = mongo_connection[f'{config["project_name"]}-pipeline'].find({
-            f'_del_{file_name_field}': True
-        }, {f'_pos_{file_name_field}': True})
-
-        for doc in del_list:
-            tar_name = doc[f"_tar_{file_name_field}"]
-            dataset = doc["dataset"]
-            start_byte = doc[f"_pos_{file_name_field}"]
-
-            tar_obj = _s3_client.get_object(Bucket=config["s3"]["bucket"],
-                                            Key=f'/{dataset}/{tar_name}')
-
-            # get end byte
-            file_url = os.path.join(config['s3']['base_url'], config['s3']['bucket']) + f'/{dataset}/{tar_name}'
-            obj = http.request('get',
-                               file_url,
-                               preload_content=False,
-                               headers={'Range': f'bytes={start_byte}-'})
-            file_info = tarfile.TarFile(fileobj=obj, mode='r').first_member
-            end_byte = start_byte + file_info._block(file_info.size)
-
-            batches[doc[tar_name]]["holes"].append((start_byte, end_byte))
-            batches[doc[tar_name]]["size"] = tar_obj["ContentLength"]
-
-    for batch in batches.values():
-        batch["holes"].sort(lambda x: x[0])
-        batch["slices"] = []
-
-        current_start = 0
-        current_byte = 0
-        for hole in batch["holes"]:
-            slice = (current_start, hole[0])
-            if slice[1] - slice[0] > 0:
-                batch["slices"].append(slice)
-        slice = (current_start, batch["size"])
-        if batch['holes'][1] > batch["size"] - 5 * 512:
-            pass

@@ -47,7 +47,6 @@ class _mail_box:
                 yield item
 
 
-
 def _Input(
         # user args
         input_type,
@@ -273,4 +272,5 @@ def _Input(
             yield from _generator(func, input_generator)
 
         return wrapper
+
     return transformer
